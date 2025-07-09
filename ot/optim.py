@@ -157,6 +157,7 @@ def generic_conditional_gradient(
     verbose=False,
     log=False,
     nx=None,
+    warm_start_sinkhorn=False,
     **kwargs,
 ):
     r"""
@@ -272,6 +273,8 @@ def generic_conditional_gradient(
         record log if True
     nx : backend, optional
         If let to its default value None, the backend will be deduced from other inputs.
+    warm_start_sinkhorn : bool, optional
+        If True, the inner solver is warm-started at each outer iteration. This works only if the inner solver is sinkhorn
     **kwargs : dict
              Parameters for linesearch
 
@@ -357,7 +360,23 @@ def generic_conditional_gradient(
             Mi = Mi + reg2 * (1 + nx.log(G))
 
         # solve linear program
-        Gc, innerlog_ = lp_solver(a, b, Mi, **kwargs)
+        if it == 1:
+            Gc, innerlog_ = lp_solver(a, b, Mi, **kwargs)
+        else:
+            if warm_start_sinkhorn:
+                method = kwargs.get("method", "sinkhorn")
+                if method in ["sinkhorn", "greenkhorn"]:
+                    u, v = innerlog_["u"], innerlog_["v"]
+                    Gc, innerlog_ = lp_solver(a, b, Mi, warmstart=(u, v), **kwargs)
+                elif method in [
+                    "sinkhorn_log",
+                    "sinkhorn_stabilized",
+                    "sinkhorn_epsilon_scaling",
+                ]:
+                    log_u, log_v = innerlog_["logu"], innerlog_["logv"]
+                    Gc, innerlog_ = lp_solver(
+                        a, b, Mi, warmstart=(log_u, log_v), **kwargs
+                    )
         # line search
         deltaG = Gc - G
 
@@ -919,6 +938,7 @@ def gcg(
         stopThr2=stopThr2,
         verbose=verbose,
         log=log,
+        warm_start_sinkhorn=True,
         **kwargs,
     )
 
